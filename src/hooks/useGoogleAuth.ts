@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadGoogleScript } from '../utils/google';
 
-const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly openid email profile';
+const SCOPE = 'https://www.googleapis.com/auth/calendar openid email profile';
 
 export type AuthStatus = 'idle' | 'initializing' | 'ready' | 'authorizing' | 'authorized' | 'error';
 

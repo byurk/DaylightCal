@@ -1,14 +1,19 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { DateTime } from 'luxon';
 import clsx from 'clsx';
 import type { CalendarEvent, DaylightWindow } from '../types';
 import { getEventSegmentsForDay, isSameDay } from '../utils/date';
 import { getTextColorForBackground } from '../utils/colors';
+import { MINUTES_IN_DAY } from '../utils/events';
 
 interface WeekViewProps {
   days: DateTime[];
   events: CalendarEvent[];
   daylightMap: Record<string, DaylightWindow>;
   onSelectEvent: (event: CalendarEvent) => void;
+  onRequestCreate: (day: DateTime, minutes: number) => void;
+  onEventTimeChange: (event: CalendarEvent, start: DateTime, end: DateTime) => void;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
@@ -39,8 +44,84 @@ const getDaylightStyle = (day: DateTime, window?: DaylightWindow) => {
   };
 };
 
-export function WeekView({ days, events, daylightMap, onSelectEvent }: WeekViewProps) {
+export function WeekView({ days, events, daylightMap, onSelectEvent, onRequestCreate, onEventTimeChange }: WeekViewProps) {
   const today = DateTime.local();
+  const [dragState, setDragState] = useState<{ eventId: string; deltaMinutes: number } | null>(null);
+  const [recentlyDraggedId, setRecentlyDraggedId] = useState<string | null>(null);
+  const hourHeightRef = useRef(64);
+  const dragIntentRef = useRef(false);
+
+  useEffect(() => {
+    const styles = getComputedStyle(document.documentElement);
+    const parsed = Number.parseFloat(styles.getPropertyValue('--grid-hour-height'));
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      hourHeightRef.current = parsed;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!recentlyDraggedId) return;
+    const id = window.setTimeout(() => setRecentlyDraggedId(null), 200);
+    return () => window.clearTimeout(id);
+  }, [recentlyDraggedId]);
+
+  const handleGridClick = (day: DateTime) => (event: ReactMouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('.event-block')) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const y = Math.max(0, Math.min(bounds.height, event.clientY - bounds.top));
+    const ratio = y / bounds.height;
+    const minutes = ratio * MINUTES_IN_DAY;
+    onRequestCreate(day, minutes);
+  };
+
+  const handleEventClick = (event: CalendarEvent) => {
+    if (recentlyDraggedId === event.id) return;
+    onSelectEvent(event);
+  };
+
+  const attachDragHandlers = (segmentEvent: CalendarEvent) => (pointerEvent: ReactPointerEvent<HTMLButtonElement>) => {
+    if (pointerEvent.button !== 0) return;
+    if (segmentEvent.isAllDay) return;
+    if (!segmentEvent.start.hasSame(segmentEvent.end, 'day')) return;
+    pointerEvent.stopPropagation();
+    const startY = pointerEvent.clientY;
+    const hourHeight = hourHeightRef.current;
+    const eventDuration = segmentEvent.end.diff(segmentEvent.start, 'minutes').minutes;
+    const dayStart = segmentEvent.start.startOf('day');
+    const startMinutesFromDay = segmentEvent.start.diff(dayStart, 'minutes').minutes;
+    const maxDeltaUp = -startMinutesFromDay;
+    const maxDeltaDown = MINUTES_IN_DAY - eventDuration - startMinutesFromDay;
+    let currentDelta = 0;
+    dragIntentRef.current = false;
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const deltaY = moveEvent.clientY - startY;
+      const approxMinutes = Math.round(((deltaY * 60) / hourHeight) / 15) * 15;
+      const clamped = Math.max(maxDeltaUp, Math.min(maxDeltaDown, approxMinutes));
+      currentDelta = clamped;
+      if (Math.abs(clamped) > 0) {
+        dragIntentRef.current = true;
+      }
+      setDragState({ eventId: segmentEvent.id, deltaMinutes: clamped });
+    };
+
+    const handleUp = () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+      if (dragIntentRef.current && currentDelta !== 0) {
+        setRecentlyDraggedId(segmentEvent.id);
+        const newStart = segmentEvent.start.plus({ minutes: currentDelta });
+        const newEnd = segmentEvent.end.plus({ minutes: currentDelta });
+        onEventTimeChange(segmentEvent, newStart, newEnd);
+      }
+      dragIntentRef.current = false;
+      setDragState(null);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+  };
   return (
     <div className="surface-card week-view" role="grid" aria-label="Week view">
       <div className="week-header-row">
@@ -95,7 +176,7 @@ export function WeekView({ days, events, daylightMap, onSelectEvent }: WeekViewP
                 ))}
                 {!allDay.length && <span className="helper-text">—</span>}
               </div>
-              <div className="week-day-grid" style={getDaylightStyle(day, daylight)}>
+              <div className="week-day-grid" style={getDaylightStyle(day, daylight)} onClick={handleGridClick(day)}>
                 <div className="week-grid-lines" />
                 <div className="week-events">
                   {timed.map((segment) => (
@@ -110,8 +191,13 @@ export function WeekView({ days, events, daylightMap, onSelectEvent }: WeekViewP
                         width: `${100 / segment.columnSpan}%`,
                         backgroundColor: segment.event.color || '#2563eb',
                         color: getTextColorForBackground(segment.event.color),
+                        transform:
+                          dragState?.eventId === segment.event.id
+                            ? `translateY(${(dragState.deltaMinutes / MINUTES_IN_DAY) * 100}%)`
+                            : undefined,
                       }}
-                      onClick={() => onSelectEvent(segment.event)}
+                      onClick={() => handleEventClick(segment.event)}
+                      onPointerDown={attachDragHandlers(segment.event)}
                     >
                       <strong>{segment.event.title}</strong>
                       <span>

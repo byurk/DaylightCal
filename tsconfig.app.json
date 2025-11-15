@@ -8,11 +8,12 @@
     "jsx": "react-jsx",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "types": ["google.accounts"],
+    "types": ["google.accounts", "vitest/globals"],
     "baseUrl": "./src",
     "rootDir": "./src",
     "outDir": "./.tsbuild/app",
-    "composite": true
+    "composite": true,
+    "skipLibCheck": true
   },
   "include": ["src"],
   "references": [{ "path": "./tsconfig.node.json" }]

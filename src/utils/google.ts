@@ -35,16 +35,28 @@ interface GoogleCalendarListResponse {
   nextPageToken?: string;
 }
 
-async function googleFetch<T>(path: string, token: string, params?: Record<string, string>): Promise<T> {
-  const query = params
-    ? `?${new URLSearchParams(params)}`
-    : '';
+interface GoogleFetchOptions {
+  params?: Record<string, string>;
+  method?: string;
+  body?: Record<string, unknown>;
+}
+
+async function googleFetch<T>(path: string, token: string, options: GoogleFetchOptions = {}): Promise<T> {
+  const query = options.params ? `?${new URLSearchParams(options.params)}` : '';
   const response = await fetch(`${GOOGLE_API_BASE}${path}${query}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    method: options.method ?? 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
   });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error?.message || `Google API error (${response.status})`);
+  }
+  if (response.status === 204) {
+    return {} as T;
   }
   return response.json() as Promise<T>;
 }
@@ -55,8 +67,10 @@ export async function fetchCalendarList(token: string): Promise<CalendarListEntr
 
   do {
     const data = await googleFetch<GoogleCalendarListResponse>('/users/me/calendarList', token, {
-      maxResults: '50',
-      pageToken: pageToken ?? '',
+      params: {
+        maxResults: '50',
+        pageToken: pageToken ?? '',
+      },
     });
     data.items?.forEach((item) => {
       calendars.push({
@@ -98,12 +112,14 @@ export async function fetchEventsForCalendar(
 
   do {
     const data = await googleFetch<GoogleEventResponse>(`/calendars/${encodeURIComponent(calendarId)}/events`, token, {
-      ...params,
-      singleEvents: 'true',
-      orderBy: 'startTime',
-      showDeleted: 'false',
-      maxResults: '2500',
-      pageToken: pageToken ?? '',
+      params: {
+        ...params,
+        singleEvents: 'true',
+        orderBy: 'startTime',
+        showDeleted: 'false',
+        maxResults: '2500',
+        pageToken: pageToken ?? '',
+      },
     });
     if (data.items) {
       events.push(...data.items);
@@ -112,4 +128,45 @@ export async function fetchEventsForCalendar(
   } while (pageToken);
 
   return events;
+}
+
+type GoogleEventWritePayload = {
+  summary: string;
+  description?: string;
+  location?: string;
+  start: { date?: string; dateTime?: string; timeZone?: string };
+  end: { date?: string; dateTime?: string; timeZone?: string };
+};
+
+export async function createCalendarEvent(
+  token: string,
+  calendarId: string,
+  payload: GoogleEventWritePayload,
+): Promise<GoogleEventItem> {
+  return googleFetch<GoogleEventItem>(`/calendars/${encodeURIComponent(calendarId)}/events`, token, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function updateCalendarEvent(
+  token: string,
+  calendarId: string,
+  eventId: string,
+  payload: GoogleEventWritePayload,
+): Promise<GoogleEventItem> {
+  return googleFetch<GoogleEventItem>(
+    `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    token,
+    {
+      method: 'PATCH',
+      body: payload,
+    },
+  );
+}
+
+export async function deleteCalendarEvent(token: string, calendarId: string, eventId: string): Promise<void> {
+  await googleFetch(`/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, token, {
+    method: 'DELETE',
+  });
 }

@@ -3,9 +3,12 @@ import type { CalendarEvent } from '../types';
 interface EventPopoverProps {
   event: CalendarEvent | null;
   onClose: () => void;
+  onEdit: (event: CalendarEvent) => void;
+  onDelete: (event: CalendarEvent) => void;
+  deleting?: boolean;
 }
 
-export function EventPopover({ event, onClose }: EventPopoverProps) {
+export function EventPopover({ event, onClose, onEdit, onDelete, deleting }: EventPopoverProps) {
   if (!event) return null;
   const isMultiDay = !event.isAllDay && !event.start.hasSame(event.end, 'day');
   const timeLabel = event.isAllDay
@@ -44,6 +47,19 @@ export function EventPopover({ event, onClose }: EventPopoverProps) {
           </div>
         )}
         {event.description && <p className="helper-text">{event.description}</p>}
+        <div className="event-popover-actions">
+          <button type="button" className="btn" onClick={() => onEdit(event)}>
+            Edit
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger"
+            onClick={() => onDelete(event)}
+            disabled={deleting}
+          >
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
       </div>
     </div>
   );

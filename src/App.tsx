@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DateTime } from 'luxon';
-import type { CalendarEvent, CalendarView } from './types';
+import type { CalendarEvent, CalendarEventDraft, CalendarEventInput, CalendarView } from './types';
 import { CalendarToolbar } from './components/CalendarToolbar';
 import { CalendarSelector } from './components/CalendarSelector';
 import { LocationPrompt } from './components/LocationPrompt';
@@ -8,12 +8,18 @@ import { GoogleAuthPanel } from './components/GoogleAuthPanel';
 import { MonthView } from './components/MonthView';
 import { WeekView } from './components/WeekView';
 import { EventPopover } from './components/EventPopover';
+import { EventEditor } from './components/EventEditor';
 import { getMonthMatrix, getViewRange, getWeekDays, formatToolbarLabel } from './utils/date';
 import { useGoogleAuth } from './hooks/useGoogleAuth';
 import { useCalendarData } from './hooks/useCalendarData';
 import { useDaylight } from './hooks/useDaylight';
+import { buildDraftTimes } from './utils/events';
 
 const FIRST_DAY_OF_WEEK = 1; // Monday keeps ISO alignment
+
+type EditorState =
+  | { mode: 'create'; draft: CalendarEventDraft }
+  | { mode: 'edit'; draft: CalendarEventDraft; event: CalendarEvent };
 
 export default function App() {
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -21,6 +27,10 @@ export default function App() {
   const [anchorDate, setAnchorDate] = useState(DateTime.local());
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const weekScrollRef = useRef<HTMLDivElement | null>(null);
+  const [editorState, setEditorState] = useState<EditorState | null>(null);
+  const [editorSaving, setEditorSaving] = useState(false);
+  const [editorDeleting, setEditorDeleting] = useState(false);
+  const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
 
   const viewRange = useMemo(() => getViewRange(view, anchorDate, FIRST_DAY_OF_WEEK), [view, anchorDate]);
   const weekDays = useMemo(() => getWeekDays(anchorDate, FIRST_DAY_OF_WEEK), [anchorDate]);
@@ -54,6 +64,109 @@ export default function App() {
     const allDayHeight = Number.parseFloat(rootStyles.getPropertyValue('--week-all-day-height')) || 60;
     container.scrollTop = allDayHeight + hourHeight * 6;
   }, [view]);
+
+  const closeEditor = () => {
+    if (editorSaving) return;
+    setEditorState(null);
+    setEditorDeleting(false);
+  };
+
+  const defaultCalendarId = useMemo(() => {
+    return calendarData.selectedCalendarIds[0] ?? calendarData.calendars[0]?.id ?? null;
+  }, [calendarData.selectedCalendarIds, calendarData.calendars]);
+
+  const handleRequestCreateEvent = (day: DateTime, minutes: number) => {
+    if (!defaultCalendarId) return;
+    const { start, end } = buildDraftTimes(day, minutes);
+    setEditorState({
+      mode: 'create',
+      draft: {
+        calendarId: defaultCalendarId,
+        title: 'New event',
+        start,
+        end,
+        isAllDay: false,
+      },
+    });
+  };
+
+  const handleEditEvent = (event: CalendarEvent) => {
+    setSelectedEvent(null);
+    setEditorState({
+      mode: 'edit',
+      event,
+      draft: {
+        calendarId: event.calendarId,
+        title: event.title,
+        start: event.start,
+        end: event.end,
+        isAllDay: event.isAllDay,
+        location: event.location,
+        description: event.description,
+      },
+    });
+  };
+
+  const handleSaveDraft = async (draft: CalendarEventDraft) => {
+    if (!editorState) return;
+    setEditorSaving(true);
+    const input: CalendarEventInput = {
+      calendarId: draft.calendarId,
+      title: draft.title,
+      start: draft.start,
+      end: draft.end,
+      isAllDay: draft.isAllDay,
+      location: draft.location,
+      description: draft.description,
+    };
+    try {
+      if (editorState.mode === 'create') {
+        await calendarData.createEvent(input);
+      } else {
+        await calendarData.updateEvent(editorState.event, input);
+      }
+      setEditorState(null);
+    } finally {
+      setEditorSaving(false);
+    }
+  };
+
+  const handleDeleteEvent = async (event: CalendarEvent) => {
+    setDeletingEventId(event.id);
+    try {
+      await calendarData.deleteEvent(event);
+      setSelectedEvent((current) => (current?.id === event.id ? null : current));
+      if (editorState?.mode === 'edit' && editorState.event.id === event.id) {
+        setEditorState(null);
+      }
+    } finally {
+      setDeletingEventId(null);
+    }
+  };
+
+  const handleDeleteFromEditor = async () => {
+    if (!editorState || editorState.mode !== 'edit') return;
+    setEditorDeleting(true);
+    try {
+      await handleDeleteEvent(editorState.event);
+      setEditorState(null);
+    } finally {
+      setEditorDeleting(false);
+    }
+  };
+
+  const handleEventTimeChange = (event: CalendarEvent, start: DateTime, end: DateTime) => {
+    const input: CalendarEventInput = {
+      calendarId: event.calendarId,
+      title: event.title,
+      start,
+      end,
+      isAllDay: event.isAllDay,
+      location: event.location,
+      description: event.description,
+    };
+    calendarData.updateEvent(event, input);
+  };
 
   if (!clientId) {
     return (
@@ -118,6 +231,8 @@ export default function App() {
                 events={calendarData.events}
                 daylightMap={daylight.daylightMap}
                 onSelectEvent={setSelectedEvent}
+                onRequestCreate={handleRequestCreateEvent}
+                onEventTimeChange={handleEventTimeChange}
               />
             </div>
           ) : (
@@ -133,7 +248,26 @@ export default function App() {
         </div>
       </div>
 
-      <EventPopover event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+      <EventPopover
+        event={selectedEvent}
+        onClose={() => setSelectedEvent(null)}
+        onEdit={handleEditEvent}
+        onDelete={(event) => {
+          void handleDeleteEvent(event);
+        }}
+        deleting={selectedEvent ? deletingEventId === selectedEvent.id : false}
+      />
+
+      <EventEditor
+        draft={editorState?.draft ?? null}
+        calendars={calendarData.calendars}
+        mode={editorState?.mode ?? 'create'}
+        saving={editorSaving}
+        deleting={editorDeleting}
+        onClose={closeEditor}
+        onSubmit={handleSaveDraft}
+        onDelete={editorState?.mode === 'edit' ? handleDeleteFromEditor : undefined}
+      />
     </div>
   );
 }

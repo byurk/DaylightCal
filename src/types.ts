@@ -12,6 +12,7 @@ export interface CalendarListEntry {
 
 export interface CalendarEvent {
   id: string;
+  googleEventId: string;
   calendarId: string;
   calendarSummary: string;
   title: string;
@@ -22,6 +23,21 @@ export interface CalendarEvent {
   location?: string;
   description?: string;
   color?: string;
+}
+
+export interface CalendarEventInput {
+  calendarId: string;
+  title: string;
+  start: DateTime;
+  end: DateTime;
+  isAllDay: boolean;
+  location?: string;
+  description?: string;
+}
+
+export interface CalendarEventDraft extends CalendarEventInput {
+  id?: string;
+  googleEventId?: string;
 }
 
 export interface DateRange {

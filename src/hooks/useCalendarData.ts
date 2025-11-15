@@ -1,7 +1,8 @@
 import { DateTime } from 'luxon';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CalendarEvent, CalendarListEntry, DateRange } from '../types';
-import { fetchCalendarList, fetchEventsForCalendar } from '../utils/google';
+import type { CalendarEvent, CalendarEventInput, CalendarListEntry, DateRange } from '../types';
+import { fetchCalendarList, fetchEventsForCalendar, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '../utils/google';
+import { buildGoogleEventPayload } from '../utils/events';
 
 interface UseCalendarDataResult {
   calendars: CalendarListEntry[];
@@ -13,6 +14,9 @@ interface UseCalendarDataResult {
   toggleCalendar: (id: string) => void;
   refreshCalendars: () => Promise<void>;
   refreshEvents: () => void;
+  createEvent: (input: CalendarEventInput) => Promise<void>;
+  updateEvent: (event: CalendarEvent, input: CalendarEventInput) => Promise<void>;
+  deleteEvent: (event: CalendarEvent) => Promise<void>;
 }
 
 const userZone = DateTime.local().zoneName;
@@ -88,6 +92,7 @@ export function useCalendarData(token: string | null, range: DateRange | null): 
             }
             return {
               id: `${calendarId}-${event.id}`,
+              googleEventId: event.id,
               calendarId,
               calendarSummary: calendar?.summary || 'Calendar',
               title: event.summary || 'Untitled event',
@@ -128,6 +133,58 @@ export function useCalendarData(token: string | null, range: DateRange | null): 
     fetchEvents();
   }, [token, rangeKey, selectedCalendarIds, fetchEvents]);
 
+  const mutateEvents = useCallback(
+    async (mutation: () => Promise<void>) => {
+      if (!token) {
+        setError('Not authenticated');
+        return;
+      }
+      setLoadingEvents(true);
+      try {
+        await mutation();
+        await fetchEvents();
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unable to update events');
+      } finally {
+        setLoadingEvents(false);
+      }
+    },
+    [token, fetchEvents],
+  );
+
+  const createEvent = useCallback(
+    async (input: CalendarEventInput) => {
+      await mutateEvents(async () => {
+        if (!token) return;
+        const payload = buildGoogleEventPayload(input, userZone);
+        await createCalendarEvent(token, input.calendarId, payload);
+      });
+    },
+    [mutateEvents, token],
+  );
+
+  const updateEvent = useCallback(
+    async (event: CalendarEvent, input: CalendarEventInput) => {
+      await mutateEvents(async () => {
+        if (!token) return;
+        const payload = buildGoogleEventPayload(input, userZone);
+        await updateCalendarEvent(token, event.calendarId, event.googleEventId, payload);
+      });
+    },
+    [mutateEvents, token],
+  );
+
+  const removeEvent = useCallback(
+    async (event: CalendarEvent) => {
+      await mutateEvents(async () => {
+        if (!token) return;
+        await deleteCalendarEvent(token, event.calendarId, event.googleEventId);
+      });
+    },
+    [mutateEvents, token],
+  );
+
   return useMemo(
     () => ({
       calendars,
@@ -139,6 +196,9 @@ export function useCalendarData(token: string | null, range: DateRange | null): 
       toggleCalendar,
       refreshCalendars,
       refreshEvents: fetchEvents,
+      createEvent,
+      updateEvent,
+      deleteEvent: removeEvent,
     }),
     [
       calendars,
@@ -150,6 +210,9 @@ export function useCalendarData(token: string | null, range: DateRange | null): 
       toggleCalendar,
       refreshCalendars,
       fetchEvents,
+      createEvent,
+      updateEvent,
+      removeEvent,
     ],
   );
 }
