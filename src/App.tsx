@@ -55,8 +55,11 @@ export default function App() {
     );
   }
 
+  const shellClass = view === 'week' ? 'app-shell app-shell--week' : 'app-shell';
+  const bodyClass = `calendar-body calendar-body--${view}`;
+
   return (
-    <div className="app-shell">
+    <div className={shellClass}>
       <CalendarToolbar
         view={view}
         label={formatToolbarLabel(view, anchorDate)}
@@ -96,14 +99,16 @@ export default function App() {
             onSubmitManual={daylight.setManualLocation}
           />
         </div>
-        <div className="calendar-body">
+        <div className={bodyClass}>
           {view === 'week' ? (
-            <WeekView
-              days={weekDays}
-              events={calendarData.events}
-              daylightMap={daylight.daylightMap}
-              onSelectEvent={setSelectedEvent}
-            />
+            <div className="calendar-week-scroll">
+              <WeekView
+                days={weekDays}
+                events={calendarData.events}
+                daylightMap={daylight.daylightMap}
+                onSelectEvent={setSelectedEvent}
+              />
+            </div>
           ) : (
             <MonthView
               matrix={monthMatrix}

@@ -44,7 +44,8 @@ export function WeekView({ days, events, daylightMap, onSelectEvent }: WeekViewP
   return (
     <div className="surface-card week-view" role="grid" aria-label="Week view">
       <div className="week-hours" aria-hidden>
-        <div style={{ height: 'var(--week-header-height)' }} />
+        <div className="week-hours-spacer" />
+        <div className="week-hours-all-day" />
         {HOURS.map((hour) => (
           <div key={hour} className="week-hour">
             <span>{DateTime.fromObject({ hour }).toFormat('ha')}</span>

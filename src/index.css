@@ -22,6 +22,7 @@
   --day-text: #0f172a;
   --grid-hour-height: 64px;
   --week-header-height: 48px;
+  --week-all-day-height: 60px;
 }
 
 * {
@@ -58,11 +59,17 @@ textarea {
 }
 
 .app-shell {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto 1fr;
   padding: 1.5rem;
   gap: 1rem;
   width: 100%;
+  min-height: 100vh;
+}
+
+.app-shell--week {
+  height: 100vh;
+  overflow: hidden;
 }
 
 @media (min-width: 1024px) {
@@ -85,6 +92,9 @@ textarea {
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.25rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .toolbar-title {
@@ -163,27 +173,46 @@ textarea {
 }
 
 .calendar-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
+  min-height: 0;
+}
+
+.calendar-body--week {
+  height: 100%;
+  overflow: hidden;
+}
+
+.calendar-body--month {
+  height: auto;
 }
 
 .calendar-layout {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
   gap: 1rem;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
 }
 
-@media (min-width: 1024px) {
-  .calendar-layout {
-    grid-template-columns: 280px 1fr;
-  }
+.calendar-week-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .calendar-side {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.app-shell--week .calendar-side {
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 .panel {
@@ -300,13 +329,29 @@ textarea {
   grid-template-columns: 64px repeat(7, minmax(0, 1fr));
   border: 1px solid var(--border);
   border-radius: 18px;
+  background: var(--surface);
   overflow: hidden;
+  height: calc(var(--week-header-height) + var(--week-all-day-height) + var(--grid-hour-height) * 24);
 }
 
 .week-hours {
   background: var(--surface-alt);
   border-right: 1px solid var(--border);
-  padding-top: var(--week-header-height);
+}
+
+.week-hours-spacer {
+  height: var(--week-header-height);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: block;
+  z-index: 3;
+}
+
+.week-hours-all-day {
+  height: var(--week-all-day-height);
+  border-bottom: 1px dashed var(--border);
 }
 
 .week-hour {
@@ -349,6 +394,11 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 2;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05);
 }
 
 .week-day-header span {
@@ -361,9 +411,10 @@ textarea {
 }
 
 .week-day-grid {
-  flex: 1;
+  flex: none;
   position: relative;
   background-size: 100% calc(var(--grid-hour-height) * 24);
+  height: calc(var(--grid-hour-height) * 24);
 }
 
 .week-grid-lines {
@@ -408,11 +459,12 @@ textarea {
 
 .week-all-day {
   padding: 0.35rem;
-  min-height: 52px;
+  height: var(--week-all-day-height);
   border-bottom: 1px dashed var(--border);
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  overflow-y: auto;
 }
 
 .all-day-chip {
@@ -505,11 +557,15 @@ textarea {
   }
 
   .calendar-layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+    overflow-x: auto;
   }
 
   .week-view {
     grid-template-columns: 48px repeat(7, minmax(120px, 1fr));
+  }
+
+  .calendar-week-scroll {
     overflow-x: auto;
   }
 }

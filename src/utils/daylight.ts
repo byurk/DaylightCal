@@ -11,7 +11,10 @@ const safeDateTime = (value: Date | undefined | null, zone: string | null) => {
 
 export function computeDaylightWindow(date: DateTime, coords: Coordinates): DaylightWindow {
   const zone = date.zoneName ?? 'local';
-  const times = SunCalc.getTimes(date.toJSDate(), coords.lat, coords.lon);
+  // Ask SunCalc for solar times using local noon to avoid timezone wraparound that
+  // can shift sunrise/sunset into the previous UTC day.
+  const solarAnchor = date.set({ hour: 12, minute: 0, second: 0, millisecond: 0 });
+  const times = SunCalc.getTimes(solarAnchor.toJSDate(), coords.lat, coords.lon);
   const sunrise = safeDateTime(times.sunrise, zone);
   const sunset = safeDateTime(times.sunset, zone);
 
