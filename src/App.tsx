@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DateTime } from 'luxon';
 import type { CalendarEvent, CalendarView } from './types';
 import { CalendarToolbar } from './components/CalendarToolbar';
@@ -20,6 +20,7 @@ export default function App() {
   const [view, setView] = useState<CalendarView>('week');
   const [anchorDate, setAnchorDate] = useState(DateTime.local());
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const weekScrollRef = useRef<HTMLDivElement | null>(null);
 
   const viewRange = useMemo(() => getViewRange(view, anchorDate, FIRST_DAY_OF_WEEK), [view, anchorDate]);
   const weekDays = useMemo(() => getWeekDays(anchorDate, FIRST_DAY_OF_WEEK), [anchorDate]);
@@ -43,6 +44,16 @@ export default function App() {
   const handleToday = () => setAnchorDate(DateTime.local());
 
   const shouldShowEmptyState = auth.isAuthorized && !calendarData.loadingEvents && !calendarData.events.length;
+
+  useEffect(() => {
+    if (view !== 'week') return;
+    const container = weekScrollRef.current;
+    if (!container) return;
+    const rootStyles = getComputedStyle(document.documentElement);
+    const hourHeight = Number.parseFloat(rootStyles.getPropertyValue('--grid-hour-height')) || 64;
+    const allDayHeight = Number.parseFloat(rootStyles.getPropertyValue('--week-all-day-height')) || 60;
+    container.scrollTop = allDayHeight + hourHeight * 6;
+  }, [view]);
 
   if (!clientId) {
     return (
@@ -101,7 +112,7 @@ export default function App() {
         </div>
         <div className={bodyClass}>
           {view === 'week' ? (
-            <div className="calendar-week-scroll">
+            <div className="calendar-week-scroll" ref={weekScrollRef}>
               <WeekView
                 days={weekDays}
                 events={calendarData.events}
